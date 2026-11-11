@@ -78,6 +78,9 @@
   .waiting{display:flex;align-items:center;gap:10px;color:var(--mint);font-weight:600;font-size:.98rem}
   .waiting i{width:9px;height:9px;border-radius:50%;background:var(--green);animation:blink 1.4s ease-in-out infinite}
   @keyframes blink{50%{opacity:.25}}
+  .sound-hint{display:none;font-size:.8rem;color:var(--mint);opacity:.85;background:rgba(255,255,255,.1);padding:7px 14px;border-radius:99px}
+  .sound-hint.show{display:block}
+  .home.done .sound-hint{display:none!important}
   .again{display:none;align-items:center;gap:10px;min-height:48px;padding:0 22px;border-radius:99px;background:var(--green);color:var(--black);font-weight:600;font-size:.98rem}
   .again svg{width:18px;height:18px}
   .home.done .waiting{display:none}
@@ -294,6 +297,7 @@
           <div class="mark reveal" style="--i:2"><img src="logo.png" alt=""></div>
           <div class="spacer"></div>
           <div class="lock-foot reveal" style="--i:3">
+            <div class="sound-hint" id="soundHint">Einmal tippen, um den Klingelton zu aktivieren</div>
             <div class="waiting" role="status"><i aria-hidden="true"></i><span id="waitLabel">Warte auf Anruf …</span></div>
             <button class="again press" id="againBtn" type="button">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 11-2.6-5.9M20 4v5h-5"/></svg>
@@ -422,13 +426,44 @@
   function setReady(){ if(ready) return; ready = true; maybeRing(); }
   function scheduleRing(ms){ ringDue = false; clearTimeout(ringTimer); ringTimer = setTimeout(function(){ ringDue = true; maybeRing(); }, ms); }
   function maybeRing(){ if(ringDue && ready && !inCall && !ringing) showIncoming(); }
+  /* ring tone: synthesised with Web Audio (no file). Browsers keep audio locked until the first tap. */
+  var actx = null, ringLoop = null, soundHint = $("soundHint");
+  function audio(){ try{ actx = actx || new (window.AudioContext || window.webkitAudioContext)(); }catch(e){} return actx; }
+  function note(c, t, f, len){
+    [f, f * 2].forEach(function(fr, i){
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = i ? "triangle" : "sine"; o.frequency.value = fr;
+      var peak = i ? .05 : .16;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + .012); g.gain.exponentialRampToValueAtTime(.0008, t + len);
+      o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + len + .02);
+    });
+  }
+  function burst(){
+    var c = audio(); if(!c || c.state !== "running") return;
+    var t = c.currentTime + .03, seq = [1319, 1047, 1319, 1047, 1319, 1047, 1568, 1319];
+    seq.forEach(function(f, i){ note(c, t + i * .17, f, .34); });
+  }
+  function startRingtone(){
+    stopRingtone(); var c = audio(); if(!c) return;
+    if(c.state !== "running") c.resume().catch(function(){});
+    burst(); ringLoop = setInterval(burst, 2800);
+  }
+  function stopRingtone(){ clearInterval(ringLoop); ringLoop = null; }
+  function unlockAudio(){
+    var c = audio(); if(!c) return;
+    c.resume().then(function(){ soundHint.classList.remove("show"); if(ringing && !ringLoop) startRingtone(); }).catch(function(){});
+  }
+  ["pointerdown","keydown","touchstart"].forEach(function(ev){ addEventListener(ev, unlockAudio, {passive:true}); });
+  try{ var c0 = audio(); if(c0 && c0.state !== "running") soundHint.classList.add("show"); }catch(e){}
+  if(audio()) audio().onstatechange = function(){ if(actx.state === "running") soundHint.classList.remove("show"); };
+
   function showIncoming(){
-    ringing = true; setState("ringing"); screen.classList.add("ringing");
+    ringing = true; startRingtone(); setState("ringing"); screen.classList.add("ringing");
     $("incoming").setAttribute("aria-hidden","false");
     try{ declineBtn.blur(); }catch(e){}
   }
   function stopRinging(){
-    ringing = false; ringDue = false; screen.classList.remove("ringing");
+    ringing = false; ringDue = false; stopRingtone(); screen.classList.remove("ringing");
     $("incoming").setAttribute("aria-hidden","true");
   }
   scheduleRing(RING_DELAY);
