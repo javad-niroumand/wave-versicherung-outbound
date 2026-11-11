@@ -616,7 +616,7 @@
   }
   function buildSms(container, url, tag){
     container.textContent = "";
-    container.appendChild(document.createTextNode("Hallo Eugen, bitte lade über diesen Link"));
+    container.appendChild(document.createTextNode("Hallo Leon, bitte lade über diesen Link"));
     var l = document.createElement(tag); l.className = "sms-link"; l.textContent = shortUrl(url);
     if(tag === "a"){ l.href = url; l.title = url; }
     container.appendChild(l);
